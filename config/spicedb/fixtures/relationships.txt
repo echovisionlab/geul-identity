@@ -1,0 +1,19 @@
+# Global role delegation.
+role:admin#member@account_identity:00000000-0000-4000-8000-000000000001
+role:author#member@account_identity:00000000-0000-4000-8000-000000000002
+role:author#member@role:admin#member
+role:user#member@role:author#member
+platform:global#admin@role:admin#member
+platform:global#author@role:author#member
+platform:global#user@role:user#member
+
+# Resource permissions: owner, author, collaborator, manager, and parent.
+post:post-1#policy@platform:global
+post:post-1#author@account_identity:00000000-0000-4000-8000-000000000002
+post:post-1#collaborator@account_identity:00000000-0000-4000-8000-000000000003
+artist:artist-1#policy@platform:global
+artist:artist-1#owner@account_identity:00000000-0000-4000-8000-000000000002
+artist:artist-2#policy@platform:global
+artist:artist-2#parent@artist:artist-1
+artist:artist-2#manager@account_identity:00000000-0000-4000-8000-000000000004
+map_place:place-1#policy@platform:global

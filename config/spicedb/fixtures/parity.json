@@ -1,0 +1,83 @@
+{
+  "format": "geul.spicedb.parity.v1",
+  "checks": [
+    {
+      "resource": "post:post-1",
+      "permission": "delete",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000001",
+      "allowed": true
+    },
+    {
+      "resource": "post:post-1",
+      "permission": "publish",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000002",
+      "allowed": true
+    },
+    {
+      "resource": "post:post-1",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000003",
+      "allowed": true
+    },
+    {
+      "resource": "post:post-1",
+      "permission": "delete",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000003",
+      "allowed": false
+    },
+    {
+      "resource": "post:post-1",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000005",
+      "allowed": false
+    },
+    {
+      "resource": "artist:artist-2",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000001",
+      "allowed": true
+    },
+    {
+      "resource": "artist:artist-2",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000002",
+      "allowed": true
+    },
+    {
+      "resource": "artist:artist-2",
+      "permission": "manage_participants",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000002",
+      "allowed": false
+    },
+    {
+      "resource": "artist:artist-2",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000004",
+      "allowed": true
+    },
+    {
+      "resource": "artist:artist-2",
+      "permission": "manage_participants",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000004",
+      "allowed": false
+    },
+    {
+      "resource": "map_place:place-1",
+      "permission": "edit",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000002",
+      "allowed": true
+    },
+    {
+      "resource": "map_place:place-1",
+      "permission": "delete",
+      "subject": "account_identity:00000000-0000-4000-8000-000000000002",
+      "allowed": false
+    }
+  ],
+  "after_delete": {
+    "resource": "post:post-1",
+    "permission": "edit",
+    "subject": "account_identity:00000000-0000-4000-8000-000000000003",
+    "allowed": false
+  }
+}

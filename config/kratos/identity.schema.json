@@ -1,0 +1,46 @@
+{
+  "$id": "urn:geul:identity-schema:v1",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Geul Identity",
+  "type": "object",
+  "properties": {
+    "traits": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "title": "Email",
+          "ory.sh/kratos": {
+            "credentials": {
+              "code": {
+                "identifier": true,
+                "via": "email"
+              },
+              "passkey": {
+                "display_name": true
+              }
+            },
+            "verification": {
+              "via": "email"
+            }
+          }
+        },
+        "pending_email": {
+          "type": "string",
+          "format": "email",
+          "title": "Email awaiting verification",
+          "maxLength": 254,
+          "ory.sh/kratos": {
+            "verification": {
+              "via": "email"
+            }
+          }
+        }
+      },
+      "required": ["email"],
+      "additionalProperties": false
+    }
+  }
+}

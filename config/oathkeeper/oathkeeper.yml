@@ -1,0 +1,117 @@
+version: v26.2.0
+
+log:
+  level: error
+  format: json
+
+serve:
+  proxy:
+    host: 0.0.0.0
+    port: 4455
+    # The listener is reached through the deployment-owned HAProxy Ingress.
+    # Exact public HTTPS origin rules therefore use HAProxy's overwritten
+    # X-Forwarded-Proto value instead of the internal cleartext hop.
+    trust_forwarded_headers: true
+    timeout:
+      read: 5m
+      write: 5m
+      idle: 120s
+  api:
+    host: 0.0.0.0
+    port: 4456
+
+access_rules:
+  matching_strategy: regexp
+  repositories:
+    - file:///etc/oathkeeper/rules.yml
+
+errors:
+  fallback:
+    - json
+  handlers:
+    www_authenticate:
+      enabled: true
+    json:
+      enabled: true
+      config:
+        verbose: false
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+authenticators:
+  anonymous:
+    enabled: true
+    config:
+      subject: anonymous
+
+  unauthorized:
+    enabled: true
+
+  cookie_session:
+    enabled: true
+    config:
+      check_session_url: __KRATOS_PUBLIC_URL__/sessions/whoami
+      preserve_path: true
+      extra_from: '@this'
+      subject_from: 'identity.id'
+      only:
+        - '__SESSION_COOKIE_NAME__'
+
+  oauth2_introspection:
+    enabled: true
+    config:
+      # Hydra's consent session places one typed authenticated context in
+      # `ext`; Remote MCP accepts no personal-access-token authenticator or
+      # fallback. The renderer requires deployment-owned service URLs and
+      # origins before Oathkeeper starts.
+      introspection_url: __HYDRA_ADMIN_URL__/admin/oauth2/introspect
+      scope_strategy: exact
+      required_scope:
+        - mcp
+      target_audience:
+        - https://site.example.invalid/mcp
+      trusted_issuers:
+        - https://sso.example.invalid
+      token_from:
+        header: Authorization
+
+# =============================================================================
+# AUTHORIZATION
+# =============================================================================
+authorizers:
+  allow:
+    enabled: true
+
+  deny:
+    enabled: true
+
+  remote_json:
+    enabled: true
+    config:
+      remote: __AUTHORIZATION_URL__/api.intra.v1.InternalGatewayAuthorizationService/AuthorizeGatewayAccess
+      headers:
+        Content-Type: application/json
+        '__INTERNAL_SERVICE_HEADER_NAME__': '{{ env "TOKEN_SIGNING_SECRET" }}'
+      payload: '{}'
+
+# =============================================================================
+# MUTATORS
+# =============================================================================
+mutators:
+  noop:
+    enabled: true
+
+  header:
+    enabled: true
+    config:
+      headers:
+        # Oathkeeper needs the browser cookie only for Kratos `whoami`.
+        # Protected application upstreams receive the canonical session id,
+        # never the raw browser credential. Retired headers have no consumer.
+        Cookie: ''
+        Authorization: ''
+        # The anonymous fallback is used only by api.open.v1. Authenticated
+        # requests carry only the UUID-validated Kratos session ID. Identity
+        # and Member IDs are resolved by the upstream from that session.
+        X-Session-Id: '{{- if ne .Subject "anonymous" -}}{{- $sessionID := "" -}}{{- if .Extra -}}{{- $sessionID = print .Extra.id -}}{{- end -}}{{- if not (regexMatch "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" $sessionID) -}}{{- fail "missing or malformed Kratos session id" -}}{{- end -}}{{- $sessionID -}}{{- end -}}'

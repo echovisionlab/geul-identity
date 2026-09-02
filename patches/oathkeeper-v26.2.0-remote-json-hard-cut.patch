@@ -1,0 +1,125 @@
+diff --git a/pipeline/authz/remote_json.go b/pipeline/authz/remote_json.go
+--- a/pipeline/authz/remote_json.go
++++ b/pipeline/authz/remote_json.go
+@@ -108,4 +108,0 @@
+-	authz := r.Header.Get("Authorization")
+-	if authz != "" {
+-		req.Header.Add("Authorization", authz)
+-	}
+@@ -194,0 +191 @@
++		httpx.ResilientClientWithMaxRetry(0),
+diff --git a/pipeline/authz/remote_json_test.go b/pipeline/authz/remote_json_test.go
+--- a/pipeline/authz/remote_json_test.go
++++ b/pipeline/authz/remote_json_test.go
+@@ -119,2 +119 @@
+-					assert.Contains(t, r.Header, "Authorization")
+-					assert.Contains(t, r.Header["Authorization"], "Bearer token")
++					assert.NotContains(t, r.Header, "Authorization")
+diff --git a/pipeline/errors/error_www_authenticate.go b/pipeline/errors/error_www_authenticate.go
+--- a/pipeline/errors/error_www_authenticate.go
++++ b/pipeline/errors/error_www_authenticate.go
+@@ -18 +18,3 @@
+-		Realm string `json:"realm"`
++		Realm            string `json:"realm"`
++		ResourceMetadata string `json:"resource_metadata"`
++		Scope            string `json:"scope"`
+@@ -35 +37 @@
+-func (a *ErrorWWWAuthenticate) Handle(w http.ResponseWriter, r *http.Request, config json.RawMessage, _ pipeline.Rule, _ error) error {
++func (a *ErrorWWWAuthenticate) Handle(w http.ResponseWriter, r *http.Request, config json.RawMessage, _ pipeline.Rule, handleErr error) error {
+@@ -41 +43,13 @@
+-	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm=%s`, c.Realm))
++	if c.ResourceMetadata != "" {
++		if !pipeline.IsAuthenticationError(handleErr) {
++			a.d.Writer().WriteError(w, r, handleErr)
++			return nil
++		}
++		challenge := fmt.Sprintf(`Bearer resource_metadata="%s"`, c.ResourceMetadata)
++		if c.Scope != "" {
++			challenge += fmt.Sprintf(`, scope="%s"`, c.Scope)
++		}
++		w.Header().Set("WWW-Authenticate", challenge)
++	} else {
++		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm=%s`, c.Realm))
++	}
+diff --git a/pipeline/error.go b/pipeline/error.go
+--- a/pipeline/error.go
++++ b/pipeline/error.go
+@@ -10,0 +11,21 @@ var (
++
++type authenticationError struct {
++	err error
++}
++
++func (e *authenticationError) Error() string {
++	return e.err.Error()
++}
++
++func (e *authenticationError) Unwrap() error {
++	return e.err
++}
++
++func MarkAuthenticationError(err error) error {
++	return &authenticationError{err: err}
++}
++
++func IsAuthenticationError(err error) bool {
++	var target *authenticationError
++	return errors.As(err, &target)
++}
+diff --git a/proxy/request_handler.go b/proxy/request_handler.go
+--- a/proxy/request_handler.go
++++ b/proxy/request_handler.go
+@@ -17,0 +18 @@
++	"github.com/ory/oathkeeper/pipeline"
+@@ -217 +218 @@
+-			case helper.ErrUnauthorized.ErrorField:
++			case helper.ErrUnauthorized.ErrorField, helper.ErrForbidden.ErrorField:
+@@ -219 +220 @@
+-				return nil, err
++				return nil, pipeline.MarkAuthenticationError(err)
+@@ -247 +248 @@
+-		return nil, err
++		return nil, pipeline.MarkAuthenticationError(err)
+diff --git a/pipeline/errors/error_www_authenticate_test.go b/pipeline/errors/error_www_authenticate_test.go
+--- a/pipeline/errors/error_www_authenticate_test.go
++++ b/pipeline/errors/error_www_authenticate_test.go
+@@ -15,0 +16 @@
++	"github.com/ory/oathkeeper/pipeline"
+@@ -45,0 +47,9 @@ func TestErrorWWWAuthenticate(t *testing.T) {
++			{
++				d:          "should respond with an MCP OAuth protected resource challenge",
++				config:     `{"resource_metadata": "https://site.example/.well-known/oauth-protected-resource/mcp", "scope": "mcp"}`,
++				givenError: pipeline.MarkAuthenticationError(&herodot.ErrUnauthorized),
++				assert: func(t *testing.T, rw *httptest.ResponseRecorder) {
++					assert.Equal(t, 401, rw.Code)
++					assert.Equal(t, `Bearer resource_metadata="https://site.example/.well-known/oauth-protected-resource/mcp", scope="mcp"`, rw.Header().Get("WWW-Authenticate"))
++				},
++			},
+diff --git a/spec/config.schema.json b/spec/config.schema.json
+--- a/spec/config.schema.json
++++ b/spec/config.schema.json
+@@ -336,0 +337,10 @@
++        "resource_metadata": {
++          "type": "string",
++          "format": "uri",
++          "title": "The OAuth Protected Resource Metadata URL"
++        },
++        "scope": {
++          "type": "string",
++          "minLength": 1,
++          "title": "The OAuth scopes required by the protected resource"
++        },
+diff --git a/.schema/config.schema.json b/.schema/config.schema.json
+--- a/.schema/config.schema.json
++++ b/.schema/config.schema.json
+@@ -336,0 +337,10 @@
++        "resource_metadata": {
++          "type": "string",
++          "format": "uri",
++          "title": "The OAuth Protected Resource Metadata URL"
++        },
++        "scope": {
++          "type": "string",
++          "minLength": 1,
++          "title": "The OAuth scopes required by the protected resource"
++        },

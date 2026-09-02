@@ -1,0 +1,40 @@
+{
+  "name": "@echovisionlab/geul-identity",
+  "version": "0.1.0",
+  "description": "Geul identity runtime configuration and validation.",
+  "author": "state303 <state303@dsub.io>",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/echovisionlab/geul-identity.git"
+  },
+  "engines": {
+    "node": "24.19.0"
+  },
+  "scripts": {
+    "check:compose": "docker compose --env-file scripts/ci/identity-compose.env -f compose/identity.yml config >/dev/null",
+    "check:oathkeeper-rules": "GOWORK=off go run ./cmd/generate-oathkeeper-rules --check",
+    "check:spicedb:zed": "docker run --rm -v \"$PWD/config/spicedb/schema.generated.zed:/schema.zed:ro\" authzed/zed@sha256:baa7a4a5e77b33875f38ba293c6eb618702e742aed5561e68c1c3490d42d2e1f validate /schema.zed --type zed --fail-on-warn",
+    "check:yaml": "node scripts/ci/validate-yaml.mjs",
+    "format:go": "find cmd config internal -name '*.go' -type f -exec gofmt -w {} +",
+    "format:prettier": "prettier --write \"**/*.{js,mjs,json,md,ts,yml,yaml}\"",
+    "format:check:go": "test -z \"$(find cmd config internal -name '*.go' -type f -exec gofmt -l {} +)\"",
+    "format:check:prettier": "prettier --check \"**/*.{js,mjs,json,md,ts,yml,yaml}\"",
+    "generate:oathkeeper-rules": "GOWORK=off go run ./cmd/generate-oathkeeper-rules",
+    "generate:spicedb-schema": "node scripts/ci/generate-spicedb-schema.mjs",
+    "knip": "knip",
+    "test": "node --test --experimental-test-coverage --test-coverage-include=scripts/ci/member-identity-contract.mjs --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 \"scripts/**/*.test.mjs\"",
+    "test:auth-boundary": "node scripts/ci/oathkeeper-image-integration.mjs",
+    "test:spicedb": "node scripts/ci/spicedb-integration.mjs",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@authzed/authzed-node": "1.6.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "knip": "^6.32.2",
+    "prettier": "^3.8.4",
+    "typescript": "^7.0.2",
+    "yaml": "^2.9.0"
+  }
+}

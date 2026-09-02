@@ -1,0 +1,13 @@
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/mcp-oauth-facade/
+!cmd/mcp-oauth-facade/*.go
+cmd/mcp-oauth-facade/*_test.go
+!internal/
+!internal/mcpoauth/
+!internal/mcpoauth/*.go
+internal/mcpoauth/*_test.go
+!patches/
+!patches/oathkeeper-v26.2.0-remote-json-hard-cut.patch

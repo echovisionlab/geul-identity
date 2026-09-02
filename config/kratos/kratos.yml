@@ -1,0 +1,287 @@
+version: v26.2.0
+
+# =============================================================================
+# Runtime values are supplied by compose/identity.yml. Local validation uses
+# scripts/ci/identity-compose.env as its non-secret fixture.
+#
+# Naming convention: YAML path → ENV var
+#   serve.public.base_url → SERVE_PUBLIC_BASE_URL
+#   session.cookie.name → SESSION_COOKIE_NAME
+#   selfservice.flows.login.ui_url → SELFSERVICE_FLOWS_LOGIN_UI_URL
+# The deployment must provide SESSION_COOKIE_NAME and
+# INTERNAL_SERVICE_HEADER_NAME; this template has no product-specific fallback.
+# =============================================================================
+
+serve:
+  public:
+    cors:
+      enabled: true
+      allowed_methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      allowed_headers:
+        - Authorization
+        - Cookie
+        - Content-Type
+        - X-CSRF-Token
+      exposed_headers:
+        - Content-Type
+        - Set-Cookie
+      allow_credentials: true
+  admin:
+      base_url: ${KRATOS_ADMIN_URL}
+
+session:
+  lifespan: 72h
+  cookie:
+    name: ${SESSION_COOKIE_NAME}
+    path: /
+    secure: "true"
+    same_site: Lax
+
+security:
+  account_enumeration:
+    mitigate: true
+
+selfservice:
+  methods:
+    password:
+      enabled: false
+
+    code:
+      enabled: true
+      passwordless_enabled: true
+      mfa_enabled: false
+      config:
+        lifespan: 15m
+        max_submissions: 5
+        missing_credential_fallback_enabled: false
+
+    passkey:
+      enabled: true
+      config:
+        rp:
+          display_name: Geul
+          id: ${KRATOS_PASSKEY_RP_ID}
+          origins:
+            - ${SITE_ORIGIN}
+
+    link:
+      enabled: false
+
+    oidc:
+      enabled: true
+      config:
+        providers:
+          - id: google
+            provider: google
+            account_linking_mode: confirm_with_existing_credential
+            mapper_url: file:///etc/config/kratos/mappers/google.jsonnet
+            scope:
+              - email
+              - profile
+              - openid
+          - id: github
+            provider: github
+            account_linking_mode: confirm_with_existing_credential
+            mapper_url: file:///etc/config/kratos/mappers/github.jsonnet
+            scope:
+              - read:user
+              - user:email
+
+  flows:
+    login:
+      after:
+        oidc:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-login.jsonnet
+                auth: &internal-service-api-key
+                  type: api_key
+                  config:
+                    name: ${INTERNAL_SERVICE_HEADER_NAME}
+                    value: ${TOKEN_SIGNING_SECRET}
+                    in: header
+                response:
+                  ignore: false
+                  parse: true
+        code:
+          hooks:
+            # Parsing the response makes a non-success lifecycle response block
+            # login completion in Kratos v26.2.
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-login.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+        passkey:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-login.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+    registration:
+      login_hints: false
+      after:
+        passkey:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/reject-credential-registration.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+        code:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/reject-credential-registration.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+            # Keep response.parse unset: in Kratos v26.2 this lifecycle hook
+            # runs after identity persistence, before the session hook.
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-registration.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+            - hook: session
+        oidc:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/reject-credential-registration.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-registration.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  # The identity is already persisted because parse is unset,
+                  # but account authorization synchronization must finish before the
+                  # following session hook can issue the first session.
+                  ignore: false
+            - hook: session
+
+    verification:
+      enabled: true
+      use: code
+      # Keep Kratos's *_code_invalid anti-enumeration mail templates disabled.
+      # A *_code_valid template carries a newly issued code; it does not mean
+      # that the recipient has already completed the challenge.
+      notify_unknown_recipients: false
+      after:
+        hooks:
+          # pending_email is completed only after Kratos verifies the exact
+          # address. The backend re-reads the Identity instead of trusting
+          # this lifecycle payload as proof.
+          - hook: web_hook
+            config:
+              method: POST
+              body: file:///etc/config/kratos/hooks/after-verification.jsonnet
+              auth: *internal-service-api-key
+              response:
+                ignore: false
+                parse: true
+
+    settings:
+      privileged_session_max_age: 3h
+      required_aal: aal1
+      after:
+        oidc:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-settings-oidc.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-settings-oidc.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: false
+        passkey:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-settings-passkey.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-settings-passkey.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: false
+        profile:
+          hooks:
+            - hook: web_hook
+              config:
+                method: POST
+                body: file:///etc/config/kratos/hooks/after-settings.jsonnet
+                auth: *internal-service-api-key
+                response:
+                  ignore: false
+                  parse: true
+            # The verifier runs first when verification is enabled and stores
+            # the pending verification flow in the settings flow context.
+            # Expose that exact flow to API clients instead of inventing a
+            # separate email-change challenge in the web application.
+            - hook: show_verification_ui
+
+courier:
+  delivery_strategy: http
+  http:
+    request_config:
+      # url: provided via COURIER_HTTP_REQUEST_CONFIG_URL env var
+      method: POST
+      body: file:///etc/config/kratos/courier/email-request.jsonnet
+      headers:
+        Content-Type: application/json
+      auth: *internal-service-api-key
+
+identity:
+  default_schema_id: user
+  schemas:
+    - id: user
+      url: file:///etc/config/kratos/identity.schema.json
+
+log:
+  level: info
+  format: json
+  leak_sensitive_values: false

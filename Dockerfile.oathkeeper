@@ -1,0 +1,61 @@
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG OATHKEEPER_COMMIT=c84dbe07ecbf6f10154f04ec49b137a115155289
+ARG OATHKEEPER_SOURCE_SHA256=65f67729239f9476b3e3d286634d9b14dfd04cdba06173bef9330e8d42ff7b22
+
+WORKDIR /src
+
+RUN apk add --no-cache ca-certificates curl patch \
+    && curl --fail --location --silent --show-error \
+      "https://codeload.github.com/ory/oathkeeper/tar.gz/${OATHKEEPER_COMMIT}" \
+      --output /oathkeeper.tar.gz \
+    && printf '%s  %s\n' "${OATHKEEPER_SOURCE_SHA256}" /oathkeeper.tar.gz | sha256sum -c - \
+    && tar --extract --gzip --file /oathkeeper.tar.gz --strip-components=1 \
+    && rm /oathkeeper.tar.gz
+
+COPY patches/oathkeeper-v26.2.0-remote-json-hard-cut.patch /patches/remote-json-hard-cut.patch
+
+RUN patch --batch --forward --strip=1 < /patches/remote-json-hard-cut.patch \
+    && go test -count=1 ./pipeline/authz ./pipeline/errors \
+    && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+      go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" \
+      -o /out/oathkeeper .
+
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS config-renderer-builder
+
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /identity
+
+COPY go.mod go.sum ./
+COPY cmd/render-oathkeeper-config ./cmd/render-oathkeeper-config
+COPY internal/authboundary ./internal/authboundary
+COPY internal/oathkeeperconfig ./internal/oathkeeperconfig
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+      go build -trimpath -buildvcs=false -ldflags="-s -w" \
+      -o /out/render-oathkeeper-config ./cmd/render-oathkeeper-config
+
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+
+ARG OATHKEEPER_COMMIT=c84dbe07ecbf6f10154f04ec49b137a115155289
+
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S -g 65532 geul \
+    && adduser -S -D -H -u 65532 -G geul geul
+
+COPY --from=builder /out/oathkeeper /usr/local/bin/oathkeeper
+COPY --from=config-renderer-builder /out/render-oathkeeper-config /usr/local/bin/render-oathkeeper-config
+
+LABEL io.geul.oathkeeper.upstream-revision="${OATHKEEPER_COMMIT}" \
+      io.geul.oathkeeper.remote-json-authorization="disabled" \
+      io.geul.oathkeeper.remote-json-retries="0"
+
+USER 65532:65532
+EXPOSE 4455 4456
+
+ENTRYPOINT ["/usr/local/bin/oathkeeper"]
+CMD ["serve"]

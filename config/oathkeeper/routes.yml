@@ -1,0 +1,21 @@
+# Deployment-specific public origins and runtime-network upstreams used by
+# cmd/generate-oathkeeper-rules. Oathkeeper access-rule files are not runtime
+# environment templates, so every deployment must set this contract and
+# regenerate rules.yml before release. Authentication-boundary names are
+# rendered separately from AUTH_HEADER_NAME, INTERNAL_SERVICE_HEADER_NAME,
+# and SESSION_COOKIE_NAME.
+origins:
+  # The deployment-owned SESSION_COOKIE_NAME is host-only and is sent only to
+  # the site origin. API, auth, and collaboration therefore share the same
+  # browser origin and are separated by their exact path matchers below.
+  api: https://site.example.invalid
+  # Web SSR reaches the cluster-private Oathkeeper Service without leaving the
+  # cluster. Only RPC matchers admit this origin; browser auth/upload/collab
+  # routes remain bound to the public site origin.
+  api_internal: http://oathkeeper.example.invalid:4455
+  auth: https://site.example.invalid
+  collab: https://site.example.invalid
+
+upstreams:
+  api: http://api.example.invalid:8000
+  collab: http://collab.example.invalid:3003

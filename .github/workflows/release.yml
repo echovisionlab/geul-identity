@@ -1,0 +1,280 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: registry.dsub.io
+  PLATFORMS: linux/amd64
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Create or update release PR
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-images:
+    name: Publish ${{ matrix.title }} image
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: mcp-oauth-facade
+            title: MCP OAuth facade
+            dockerfile: Dockerfile.mcp-oauth-facade
+            image_name: registry.dsub.io/echovisionlab/geul-identity-mcp-oauth-facade
+          - component: oathkeeper
+            title: Oathkeeper
+            dockerfile: Dockerfile.oathkeeper
+            image_name: registry.dsub.io/echovisionlab/geul-identity-oathkeeper
+    env:
+      COMPONENT: ${{ matrix.component }}
+      DOCKERFILE: ${{ matrix.dockerfile }}
+      IMAGE_NAME: ${{ matrix.image_name }}
+      RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+      RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+      RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Validate release context
+        id: release-context
+        run: |
+          set -euo pipefail
+
+          for var in RELEASE_TAG RELEASE_VERSION RELEASE_SHA; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing Release Please output: ${var}" >&2
+              exit 1
+            fi
+          done
+          if ! [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+             [ "${RELEASE_TAG}" != "v${RELEASE_VERSION}" ]; then
+            echo "Unsupported or mismatched release tag: ${RELEASE_TAG} version=${RELEASE_VERSION}" >&2
+            exit 1
+          fi
+          if ! [[ "${RELEASE_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "Release Please returned a non-full commit SHA: ${RELEASE_SHA}" >&2
+            exit 1
+          fi
+          checkout_sha="$(git rev-parse HEAD)"
+          if [ "${checkout_sha}" != "${RELEASE_SHA}" ]; then
+            echo "Checked out ${checkout_sha}, expected release SHA ${RELEASE_SHA}." >&2
+            exit 1
+          fi
+
+          {
+            echo "created_at=$(git log -1 --format=%cI)"
+            echo "sha_image=${IMAGE_NAME}:sha-${RELEASE_SHA}"
+            echo "tag_image=${IMAGE_NAME}:${RELEASE_TAG}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate Harbor credentials
+        env:
+          HARBOR_REGISTRY_USERNAME: ${{ secrets.HARBOR_REGISTRY_USERNAME }}
+          HARBOR_REGISTRY_PASSWORD: ${{ secrets.HARBOR_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for var in HARBOR_REGISTRY_USERNAME HARBOR_REGISTRY_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing repository secret: ${var}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Log in to Harbor
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_REGISTRY_USERNAME }}
+          password: ${{ secrets.HARBOR_REGISTRY_PASSWORD }}
+
+      - name: Build and push release image
+        id: published-image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ env.PLATFORMS }}
+          no-cache: true
+          pull: true
+          push: true
+          tags: |
+            ${{ steps.release-context.outputs.sha_image }}
+            ${{ steps.release-context.outputs.tag_image }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.release-context.outputs.created_at }}
+            org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
+            org.opencontainers.image.ref.name=${{ env.RELEASE_TAG }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.title=geul-identity-${{ env.COMPONENT }}
+            org.opencontainers.image.version=${{ env.RELEASE_VERSION }}
+
+      - name: Validate and smoke immutable MCP OAuth facade image
+        if: ${{ matrix.component == 'mcp-oauth-facade' }}
+        env:
+          PUBLISHED_DIGEST: ${{ steps.published-image.outputs.digest }}
+          SHA_IMAGE: ${{ steps.release-context.outputs.sha_image }}
+          TAG_IMAGE: ${{ steps.release-context.outputs.tag_image }}
+        run: |
+          set -euo pipefail
+
+          sha_digest="$(docker buildx imagetools inspect "${SHA_IMAGE}" --format '{{.Manifest.Digest}}')"
+          tag_digest="$(docker buildx imagetools inspect "${TAG_IMAGE}" --format '{{.Manifest.Digest}}')"
+          if ! [[ "${sha_digest}" =~ ^sha256:[a-f0-9]{64}$ ]] ||
+             [ "${tag_digest}" != "${sha_digest}" ] ||
+             [ "${PUBLISHED_DIGEST}" != "${sha_digest}" ]; then
+            echo "Release and SHA tags do not identify one immutable image digest." >&2
+            exit 1
+          fi
+
+          release_image="${IMAGE_NAME}@${sha_digest}"
+          container_name="geul-identity-mcp-oauth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm -f "${container_name}" >/dev/null 2>&1 || true
+            docker image rm -f "${release_image}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker pull "${release_image}"
+          revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${release_image}")"
+          ref_name="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.ref.name" }}' "${release_image}")"
+          source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "${release_image}")"
+          version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "${release_image}")"
+          [ "${revision}" = "${RELEASE_SHA}" ]
+          [ "${ref_name}" = "${RELEASE_TAG}" ]
+          [ "${source}" = "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" ]
+          [ "${version}" = "${RELEASE_VERSION}" ]
+          docker run --rm --entrypoint /bin/sh "${release_image}" -c \
+            'test "$(id -u)" = 65532 && test -x /usr/local/bin/mcp-oauth-facade && test -s /etc/ssl/certs/ca-certificates.crt'
+
+          docker run -d --name "${container_name}" \
+            -e MCP_OAUTH_HYDRA_PUBLIC_URL=http://127.0.0.1:4444 \
+            -e MCP_OAUTH_HYDRA_ADMIN_URL=http://127.0.0.1:4445 \
+            -e MCP_OAUTH_ISSUER_URL=https://issuer.example.invalid \
+            -e SITE_ORIGIN=https://site.example.invalid \
+            -p 127.0.0.1::8080 "${release_image}" >/dev/null
+          host_port="$(docker port "${container_name}" 8080/tcp | awk -F: 'NR == 1 { print $NF }')"
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --show-error "http://127.0.0.1:${host_port}/health/ready" >/dev/null; then
+              metadata="$(curl --fail --silent --show-error "http://127.0.0.1:${host_port}/.well-known/oauth-authorization-server")"
+              if ! printf '%s' "${metadata}" | grep -Eq '"registration_endpoint"[[:space:]]*:' ||
+                 ! printf '%s' "${metadata}" | grep -Eq '"client_id_metadata_document_supported"[[:space:]]*:[[:space:]]*true'; then
+                echo "MCP OAuth facade did not advertise both supported dynamic onboarding paths." >&2
+                exit 1
+              fi
+              if ! printf '%s' "${metadata}" | jq -e '
+                .grant_types_supported == ["authorization_code", "refresh_token"] and
+                .scopes_supported == ["mcp", "offline_access"]
+              ' >/dev/null; then
+                echo "MCP OAuth facade did not advertise the exact authorization and rotating-refresh profile." >&2
+                exit 1
+              fi
+              registration_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                -H 'Content-Type: application/json' -d '{}' \
+                "http://127.0.0.1:${host_port}/oauth2/register")"
+              if [ "${registration_status}" != "400" ]; then
+                echo "Invalid DCR fixture returned HTTP ${registration_status}, expected 400." >&2
+                exit 1
+              fi
+              cleanup
+              trap - EXIT
+              if [ -n "$(docker ps -aq --filter "name=^/${container_name}$")" ] ||
+                 docker image inspect "${release_image}" >/dev/null 2>&1; then
+                echo "Release image smoke resources were not removed." >&2
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "${container_name}" >&2
+          exit 1
+
+      - name: Validate and smoke immutable Oathkeeper image
+        if: ${{ matrix.component == 'oathkeeper' }}
+        env:
+          PUBLISHED_DIGEST: ${{ steps.published-image.outputs.digest }}
+          SHA_IMAGE: ${{ steps.release-context.outputs.sha_image }}
+          TAG_IMAGE: ${{ steps.release-context.outputs.tag_image }}
+        run: |
+          set -euo pipefail
+
+          sha_digest="$(docker buildx imagetools inspect "${SHA_IMAGE}" --format '{{.Manifest.Digest}}')"
+          tag_digest="$(docker buildx imagetools inspect "${TAG_IMAGE}" --format '{{.Manifest.Digest}}')"
+          if ! [[ "${sha_digest}" =~ ^sha256:[a-f0-9]{64}$ ]] ||
+             [ "${tag_digest}" != "${sha_digest}" ] ||
+             [ "${PUBLISHED_DIGEST}" != "${sha_digest}" ]; then
+            echo "Release and SHA tags do not identify one immutable image digest." >&2
+            exit 1
+          fi
+
+          release_image="${IMAGE_NAME}@${sha_digest}"
+          cleanup() {
+            docker image rm -f "${release_image}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker pull "${release_image}"
+          revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${release_image}")"
+          ref_name="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.ref.name" }}' "${release_image}")"
+          source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "${release_image}")"
+          version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "${release_image}")"
+          upstream_revision="$(docker image inspect --format '{{ index .Config.Labels "io.geul.oathkeeper.upstream-revision" }}' "${release_image}")"
+          authorization="$(docker image inspect --format '{{ index .Config.Labels "io.geul.oathkeeper.remote-json-authorization" }}' "${release_image}")"
+          retries="$(docker image inspect --format '{{ index .Config.Labels "io.geul.oathkeeper.remote-json-retries" }}' "${release_image}")"
+          [ "${revision}" = "${RELEASE_SHA}" ]
+          [ "${ref_name}" = "${RELEASE_TAG}" ]
+          [ "${source}" = "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" ]
+          [ "${version}" = "${RELEASE_VERSION}" ]
+          [ "${upstream_revision}" = "c84dbe07ecbf6f10154f04ec49b137a115155289" ]
+          [ "${authorization}" = "disabled" ]
+          [ "${retries}" = "0" ]
+          docker run --rm --entrypoint /bin/sh "${release_image}" -c \
+            'test "$(id -u)" = 65532 && test -x /usr/local/bin/oathkeeper && test -s /etc/ssl/certs/ca-certificates.crt'
+          docker run --rm "${release_image}" help >/dev/null
+
+          cleanup
+          trap - EXIT
+          if docker image inspect "${release_image}" >/dev/null 2>&1; then
+            echo "Release image smoke resources were not removed." >&2
+            exit 1
+          fi
