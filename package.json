@@ -1,6 +1,7 @@
 {
   "name": "@echovisionlab/geul-identity",
   "version": "0.1.0",
+  "private": true,
   "description": "Geul identity runtime configuration and validation.",
   "author": "state303 <state303@dsub.io>",
   "license": "PolyForm-Noncommercial-1.0.0",

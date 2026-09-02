@@ -15,7 +15,8 @@ const parityFixturePath = path.join(
   root,
   "config/spicedb/fixtures/parity.json",
 );
-const spicedbImage = "authzed/spicedb:v1.56.0";
+const spicedbImage =
+  "authzed/spicedb:v1.56.0@sha256:c8a558a6cc1f9379fcdcab0171b623d65e7e5f95c998ebb7f937ca00a7c1598c";
 const token = "geul-spicedb-integration-token";
 const name = `geul-spicedb-test-${process.pid}-${Date.now()}`;
 const fullyConsistent = v1.Consistency.create({
