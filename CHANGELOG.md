@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/echovisionlab/geul-identity/compare/v0.1.0...v0.1.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **identity:** harden package publication and SpiceDB image ([#3](https://github.com/echovisionlab/geul-identity/issues/3)) ([acab258](https://github.com/echovisionlab/geul-identity/commit/acab2587f632f8990230ec3e3a17c2a7426c6bdb))
+
 ## 0.1.0 (2026-09-02)
 
 

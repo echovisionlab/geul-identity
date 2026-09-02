@@ -1,6 +1,6 @@
 {
   "name": "@echovisionlab/geul-identity",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Geul identity runtime configuration and validation.",
   "author": "state303 <state303@dsub.io>",
