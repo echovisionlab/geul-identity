@@ -1,0 +1,366 @@
+--- a/selfservice/flow/settings/hook.go
++++ b/selfservice/flow/settings/hook.go
+@@ -63,6 +63,7 @@
+ 
+ 	executorDependencies interface {
+ 		identity.ManagementProvider
++		identity.PrivilegedPoolProvider
+ 		identity.ValidationProvider
+ 		session.ManagementProvider
+ 		config.Provider
+@@ -191,6 +192,20 @@
+ 	preHooks, err := e.d.PostSettingsPrePersistHooks(ctx, settingsType)
+ 	if err != nil {
+ 		return err
++	}
++	// Stock Identity.MarshalJSON deliberately hides credentials. Preserve an
++	// explicit, minimal inventory across both webhook phases instead of
++	// pretending session.identity is a confidential credential snapshot.
++	if len(preHooks) > 0 && (settingsType == "oidc" || settingsType == "passkey") {
++		previous, err := e.d.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
++		if err != nil {
++			return err
++		}
++		ctx, err = withCredentialChange(ctx, previous, i)
++		if err != nil {
++			return err
++		}
++		r = r.WithContext(ctx)
+ 	}
+ 	for k, executor := range preHooks {
+ 		logFields := logrus.Fields{
+--- /dev/null
++++ b/selfservice/flow/settings/credential_change.go
+@@ -0,0 +1,83 @@
++// Copyright © 2026 Echovision Lab
++// SPDX-License-Identifier: Apache-2.0
++
++package settings
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"slices"
++
++	"github.com/ory/kratos/identity"
++)
++
++type credentialChangeKey struct{}
++
++// CredentialChange contains only the inventory needed by an authenticated
++// settings-policy webhook. It is request-local and is never part of a public
++// identity, flow, or session response. Passwords, tokens, keys and claims stay
++// behind Kratos' existing confidential identity boundary.
++type CredentialChange struct {
++	Previous map[identity.CredentialsType]CredentialSummary `json:"previous_credentials"`
++	Proposed map[identity.CredentialsType]CredentialSummary `json:"credentials"`
++}
++
++type CredentialSummary struct {
++	Type        identity.CredentialsType `json:"type"`
++	Identifiers []string                 `json:"identifiers"`
++	Config      json.RawMessage          `json:"config,omitempty"`
++}
++
++func CredentialChangeFromContext(ctx context.Context) *CredentialChange {
++	change, _ := ctx.Value(credentialChangeKey{}).(*CredentialChange)
++	return change
++}
++
++func withCredentialChange(ctx context.Context, previous, proposed *identity.Identity) (context.Context, error) {
++	before, err := credentialSummary(previous)
++	if err != nil {
++		return ctx, err
++	}
++	after, err := credentialSummary(proposed)
++	if err != nil {
++		return ctx, err
++	}
++	return context.WithValue(ctx, credentialChangeKey{}, &CredentialChange{Previous: before, Proposed: after}), nil
++}
++
++func credentialSummary(id *identity.Identity) (map[identity.CredentialsType]CredentialSummary, error) {
++	if id == nil {
++		return nil, fmt.Errorf("settings credential identity is missing")
++	}
++	out := make(map[identity.CredentialsType]CredentialSummary)
++	for _, kind := range []identity.CredentialsType{identity.CredentialsTypeCodeAuth, identity.CredentialsTypeOIDC, identity.CredentialsTypePasskey} {
++		credential, ok := id.Credentials[kind]
++		if !ok {
++			continue
++		}
++		summary := CredentialSummary{Type: kind, Identifiers: slices.Clone(credential.Identifiers)}
++		if kind == identity.CredentialsTypePasskey {
++			var config struct {
++				Credentials []struct {
++					ID string `json:"id"`
++				} `json:"credentials"`
++			}
++			if err := json.Unmarshal(credential.Config, &config); err != nil {
++				return nil, fmt.Errorf("settings passkey inventory is invalid: %w", err)
++			}
++			for _, key := range config.Credentials {
++				if key.ID == "" {
++					return nil, fmt.Errorf("settings passkey identifier is missing")
++				}
++			}
++			encoded, err := json.Marshal(config)
++			if err != nil {
++				return nil, err
++			}
++			summary.Config = encoded
++		}
++		out[kind] = summary
++	}
++	return out, nil
++}
+--- /dev/null
++++ b/selfservice/flow/settings/credential_change_test.go
+@@ -0,0 +1,46 @@
++package settings
++
++import (
++	"encoding/json"
++	"github.com/ory/kratos/identity"
++	"github.com/ory/x/sqlxx"
++	"github.com/stretchr/testify/require"
++	"testing"
++)
++
++func TestGeulCredentialInventoryDoesNotExposeSecrets(t *testing.T) {
++	old := &identity.Identity{Credentials: map[identity.CredentialsType]identity.Credentials{
++		identity.CredentialsTypePassword: {Config: sqlxx.JSONRawMessage(`{"hashed_password":"password-secret"}`)},
++		identity.CredentialsTypeCodeAuth: {Identifiers: []string{"test@example.test"}, Config: sqlxx.JSONRawMessage(`{"code":"otp-secret"}`)},
++		identity.CredentialsTypeOIDC:     {Identifiers: []string{"google:subject"}, Config: sqlxx.JSONRawMessage(`{"providers":[{"initial_access_token":"access-secret","initial_id_token":"id-secret"}]}`)},
++		identity.CredentialsTypePasskey:  {Config: sqlxx.JSONRawMessage(`{"credentials":[{"id":"a2V5LTE=","public_key":"key-secret","display_name":"private-device"}]}`)},
++	}}
++	next := &identity.Identity{Credentials: map[identity.CredentialsType]identity.Credentials{
++		identity.CredentialsTypePasskey: {Config: sqlxx.JSONRawMessage(`{"credentials":[{"id":"a2V5LTE="},{"id":"a2V5LTI="}]}`)},
++	}}
++	ctx, err := withCredentialChange(t.Context(), old, next)
++	require.NoError(t, err)
++	change := CredentialChangeFromContext(ctx)
++	require.NotNil(t, change)
++	raw, err := json.Marshal(change)
++	require.NoError(t, err)
++	for _, secret := range []string{"password-secret", "otp-secret", "access-secret", "id-secret", "key-secret", "private-device"} {
++		require.NotContains(t, string(raw), secret)
++	}
++	require.Contains(t, string(raw), "google:subject")
++	require.Contains(t, string(raw), "a2V5LTI=")
++	require.NotContains(t, change.Previous, identity.CredentialsTypePassword)
++	// Later identity/session changes cannot rewrite the event's before image.
++	old.Credentials[identity.CredentialsTypeOIDC].Identifiers[0] = "changed"
++	delete(next.Credentials, identity.CredentialsTypePasskey)
++	require.Equal(t, []string{"google:subject"}, change.Previous[identity.CredentialsTypeOIDC].Identifiers)
++	require.Contains(t, change.Proposed, identity.CredentialsTypePasskey)
++	require.Nil(t, CredentialChangeFromContext(t.Context()))
++}
++
++func TestGeulCredentialInventoryRejectsMalformedPasskeys(t *testing.T) {
++	for _, config := range []string{`{`, `{"credentials":[{}]}`} {
++		_, err := credentialSummary(&identity.Identity{Credentials: map[identity.CredentialsType]identity.Credentials{identity.CredentialsTypePasskey: {Config: sqlxx.JSONRawMessage(config)}}})
++		require.Error(t, err)
++	}
++}
+--- a/selfservice/hook/web_hook.go
++++ b/selfservice/hook/web_hook.go
+@@ -81,13 +81,14 @@
+ 	}
+ 
+ 	templateContext struct {
+-		Flow           flow.Flow          `json:"flow"`
+-		RequestHeaders http.Header        `json:"request_headers"`
+-		RequestMethod  string             `json:"request_method"`
+-		RequestURL     string             `json:"request_url"`
+-		RequestCookies map[string]string  `json:"request_cookies"`
+-		Identity       *identity.Identity `json:"identity,omitempty"`
+-		Session        *session.Session   `json:"session,omitempty"`
++		CredentialChange *settings.CredentialChange `json:"credential_change,omitempty"`
++		Flow             flow.Flow                  `json:"flow"`
++		RequestHeaders   http.Header                `json:"request_headers"`
++		RequestMethod    string                     `json:"request_method"`
++		RequestURL       string                     `json:"request_url"`
++		RequestCookies   map[string]string          `json:"request_cookies"`
++		Identity         *identity.Identity         `json:"identity,omitempty"`
++		Session          *session.Session           `json:"session,omitempty"`
+ 	}
+ 
+ 	WebHook struct {
+@@ -271,13 +272,14 @@
+ 	}
+ 	return otelx.WithSpan(req.Context(), "selfservice.hook.WebHook.ExecuteSettingsPostPersistHook", func(ctx context.Context) error {
+ 		return e.execute(ctx, &templateContext{
+-			Flow:           flow,
+-			RequestHeaders: req.Header,
+-			RequestMethod:  req.Method,
+-			RequestURL:     x.RequestURL(req).String(),
+-			RequestCookies: cookies(req),
+-			Identity:       id,
+-			Session:        s,
++			CredentialChange: settings.CredentialChangeFromContext(ctx),
++			Flow:             flow,
++			RequestHeaders:   req.Header,
++			RequestMethod:    req.Method,
++			RequestURL:       x.RequestURL(req).String(),
++			RequestCookies:   cookies(req),
++			Identity:         id,
++			Session:          s,
+ 		})
+ 	})
+ }
+@@ -288,13 +290,14 @@
+ 	}
+ 	return otelx.WithSpan(req.Context(), "selfservice.hook.WebHook.ExecuteSettingsPrePersistHook", func(ctx context.Context) error {
+ 		return e.execute(ctx, &templateContext{
+-			Flow:           flow,
+-			RequestHeaders: req.Header,
+-			RequestMethod:  req.Method,
+-			RequestURL:     x.RequestURL(req).String(),
+-			RequestCookies: cookies(req),
+-			Identity:       id,
+-			Session:        s,
++			CredentialChange: settings.CredentialChangeFromContext(ctx),
++			Flow:             flow,
++			RequestHeaders:   req.Header,
++			RequestMethod:    req.Method,
++			RequestURL:       x.RequestURL(req).String(),
++			RequestCookies:   cookies(req),
++			Identity:         id,
++			Session:          s,
+ 		})
+ 	})
+ }
+--- /dev/null
++++ b/selfservice/hook/geul_settings_contract_test.go
+@@ -0,0 +1,22 @@
++package hook
++
++import (
++ "encoding/json"
++ "testing"
++ "github.com/stretchr/testify/require"
++ "github.com/ory/kratos/identity"
++ "github.com/ory/kratos/session"
++)
++
++func TestGeulStockSettingsContextStripsCredentialSnapshots(t *testing.T) {
++ id:= &identity.Identity{Credentials:map[identity.CredentialsType]identity.Credentials{
++  identity.CredentialsTypeCodeAuth:{Type:identity.CredentialsTypeCodeAuth,Identifiers:[]string{"test@example.test"}},
++ }}
++ payload,err:=json.Marshal(templateContext{Identity:id,Session:&session.Session{Identity:id}})
++ require.NoError(t,err)
++ var ctx map[string]any
++ require.NoError(t,json.Unmarshal(payload,&ctx))
++ require.NotContains(t,ctx["identity"],"credentials")
++ require.NotContains(t,ctx["session"].(map[string]any)["identity"],"credentials")
++ require.NotEmpty(t,id.Credentials,"serialization must not mutate live credential data")
++}
+--- /dev/null
++++ b/selfservice/strategy/passkey/geul_settings_hooks_test.go
+@@ -0,0 +1,104 @@
++package passkey_test
++
++import (
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"sync/atomic"
++	"testing"
++
++	"github.com/gofrs/uuid"
++	"github.com/ory/kratos/driver/config"
++	"github.com/ory/kratos/identity"
++	"github.com/ory/kratos/pkg/testhelpers"
++	"github.com/ory/kratos/ui/node"
++	"github.com/ory/kratos/x"
++	"github.com/stretchr/testify/require"
++	"github.com/tidwall/gjson"
++)
++
++func TestGeulPasskeySettingsWebhookContract(t *testing.T) {
++	for _, stock := range []bool{true, false} {
++		name := "corrected-contract"
++		if stock {
++			name = "stock-contract-reproduces-failure"
++		}
++		t.Run(name, func(t *testing.T) {
++			fix := newSettingsFixture(t)
++			var calls atomic.Int32
++			deliveries := make(chan []byte, 8)
++			callback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				var body json.RawMessage
++				if r.Header.Get("X-Internal-Service") != "contract-test-secret" {
++					w.WriteHeader(401)
++					return
++				}
++				if json.NewDecoder(r.Body).Decode(&body) != nil {
++					w.WriteHeader(400)
++					return
++				}
++				calls.Add(1)
++				deliveries <- body
++				if !gjson.GetBytes(body, "credentials_present").Bool() || !gjson.GetBytes(body, "previous_credentials_present").Bool() {
++					w.WriteHeader(500)
++					return
++				}
++				w.Header().Set("Content-Type", "application/json")
++				_, _ = w.Write([]byte(`{}`))
++			}))
++			t.Cleanup(callback.Close)
++			template := `function(ctx) { credentials_present: std.objectHas(ctx.identity,'credentials'), previous_credentials_present: std.objectHas(ctx.session.identity,'credentials') }`
++			if !stock {
++				actual, err := os.ReadFile(os.Getenv("GEUL_CREDENTIAL_SETTINGS_TEMPLATE"))
++				require.NoError(t, err, "test must use the identity repository's actual settings template")
++				template = string(actual)
++			}
++			file := filepath.Join(t.TempDir(), "settings.jsonnet")
++			require.NoError(t, os.WriteFile(file, []byte(template), 0600))
++			hooks := []config.SelfServiceHook{}
++			for _, parse := range []bool{true, false} {
++				conf, err := json.Marshal(map[string]any{"url": callback.URL, "method": "POST", "body": "file://" + file, "auth": map[string]any{"type": "api_key", "config": map[string]any{"name": "X-Internal-Service", "value": "contract-test-secret", "in": "header"}}, "response": map[string]any{"ignore": false, "parse": parse}})
++				require.NoError(t, err)
++				hooks = append(hooks, config.SelfServiceHook{Name: "web_hook", Config: conf})
++			}
++			fix.conf.MustSet(t.Context(), "selfservice.flows.settings.after.passkey.hooks", hooks)
++			var id identity.Identity
++			require.NoError(t, json.Unmarshal(settingsFixtureSuccessIdentity, &id))
++			id.NID = x.NewUUID()
++			_ = fix.reg.PrivilegedIdentityPool().DeleteIdentity(t.Context(), id.ID)
++			client := testhelpers.NewHTTPClientWithIdentitySessionCookie(t.Context(), t, fix.reg, &id)
++			f := testhelpers.InitializeSettingsFlowViaBrowser(t, client, true, fix.publicTS)
++			interim, err := fix.reg.SettingsFlowPersister().GetSettingsFlow(t.Context(), uuid.FromStringOrNil(f.Id))
++			require.NoError(t, err)
++			interim.InternalContext = settingsFixtureSuccessInternalContext
++			require.NoError(t, fix.reg.SettingsFlowPersister().UpdateSettingsFlow(t.Context(), interim))
++			values := testhelpers.SDKFormFieldsToURLValues(f.Ui.Nodes)
++			values.Set("method", "passkey")
++			values.Set(node.PasskeySettingsRegister, string(settingsFixtureSuccessResponse))
++			body, response := testhelpers.SettingsMakeRequest(t, false, true, f, client, testhelpers.EncodeFormAsJSON(t, true, values))
++			stored, err := fix.reg.PrivilegedIdentityPool().GetIdentityConfidential(t.Context(), id.ID)
++			require.NoError(t, err)
++			if stock {
++				require.GreaterOrEqual(t, calls.Load(), int32(1))
++				require.NotContains(t, stored.Credentials, identity.CredentialsTypePasskey, "failed pre-hook must not persist the key")
++				require.NotEqual(t, "success", gjson.Get(body, "state").String())
++				return
++			}
++			require.Equal(t, http.StatusOK, response.StatusCode, body)
++			require.Equal(t, "success", gjson.Get(body, "state").String(), body)
++			require.Equal(t, int32(2), calls.Load(), "exactly one pre and one post callback")
++			first, second := <-deliveries, <-deliveries
++			for _, delivery := range [][]byte{first, second} {
++				require.True(t, gjson.GetBytes(delivery, "credentials_present").Bool())
++				require.False(t, gjson.GetBytes(delivery, "previous_credentials.passkey").Exists())
++				require.Equal(t, int64(1), gjson.GetBytes(delivery, "credentials.passkey.config.credentials.#").Int())
++				require.False(t, gjson.GetBytes(delivery, "credentials.passkey.config.credentials.0.public_key").Exists())
++			}
++			require.JSONEq(t, string(first), string(second), "pre and post must describe the same exact mutation")
++			require.Contains(t, stored.Credentials, identity.CredentialsTypePasskey)
++			require.Equal(t, gjson.GetBytes(stored.Credentials[identity.CredentialsTypePasskey].Config, "credentials.0.id").String(), gjson.GetBytes(second, "credentials.passkey.config.credentials.0.id").String())
++		})
++	}
++}

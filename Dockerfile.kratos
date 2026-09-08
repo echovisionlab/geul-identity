@@ -1,0 +1,42 @@
+FROM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
+
+ARG KRATOS_COMMIT=9d7085948039ffb8960160d4979f71527b5cf4d5
+ARG KRATOS_SOURCE_SHA256=7d597eaa5aa2a2111efb60c2b7805cdc2801d3e66b32e480ab3de04000c8bb31
+
+WORKDIR /src
+RUN apk add --no-cache ca-certificates curl patch build-base \
+    && curl --fail --location --silent --show-error \
+      "https://codeload.github.com/ory/kratos/tar.gz/${KRATOS_COMMIT}" --output /kratos.tar.gz \
+    && printf '%s  %s\n' "${KRATOS_SOURCE_SHA256}" /kratos.tar.gz | sha256sum -c - \
+    && tar --extract --gzip --file /kratos.tar.gz --strip-components=1 \
+    && rm /kratos.tar.gz
+
+COPY patches/kratos-v26.2.0-settings-inventory.patch /patches/settings-inventory.patch
+COPY config/kratos/hooks/after-settings-passkey.jsonnet /fixtures/after-settings-passkey.jsonnet
+
+ENV CGO_ENABLED=1
+ENV CGO_CPPFLAGS=-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600
+ENV GEUL_CREDENTIAL_SETTINGS_TEMPLATE=/fixtures/after-settings-passkey.jsonnet
+
+RUN patch --batch --forward --strip=1 < /patches/settings-inventory.patch \
+    && go test -tags sqlite -count=1 ./selfservice/hook ./selfservice/flow/settings ./selfservice/strategy/passkey \
+      -run 'TestGeul|TestCompleteSettings' \
+    && go build -tags sqlite -mod=readonly -trimpath -buildvcs=false \
+      -ldflags="-s -w -X github.com/ory/kratos/driver/config.Version=v26.2.0-geul -X github.com/ory/kratos/driver/config.Commit=${KRATOS_COMMIT}" \
+      -o /out/kratos .
+
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+ARG KRATOS_COMMIT=9d7085948039ffb8960160d4979f71527b5cf4d5
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S -g 65532 geul \
+    && adduser -S -D -H -u 65532 -G geul geul \
+    && mkdir -p /var/lib/sqlite \
+    && chown geul:geul /var/lib/sqlite
+COPY --from=builder /out/kratos /usr/local/bin/kratos
+LABEL io.geul.kratos.upstream-revision="${KRATOS_COMMIT}" \
+      io.geul.kratos.settings-inventory="1"
+USER 65532:65532
+VOLUME /var/lib/sqlite
+EXPOSE 4433 4434
+ENTRYPOINT ["/usr/local/bin/kratos"]
+CMD ["serve"]

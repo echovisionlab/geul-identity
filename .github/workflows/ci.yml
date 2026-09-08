@@ -86,6 +86,9 @@ jobs:
           npm run generate:spicedb-schema
           npm run check:spicedb:zed
 
+      - name: Verify Kratos settings contract in the runtime image
+        run: docker build --file Dockerfile.kratos --tag geul-identity-kratos:ci .
+
       - name: Run Node contracts and type checks
         run: |
           npm test

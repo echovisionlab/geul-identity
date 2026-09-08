@@ -34,6 +34,13 @@ x-kratos-internal-auth-environment: &kratos-internal-auth-environment
   COURIER_HTTP_REQUEST_CONFIG_AUTH_CONFIG_NAME: *kratos-internal-service-header-name
   COURIER_HTTP_REQUEST_CONFIG_AUTH_CONFIG_VALUE: *kratos-internal-service-secret
 
+# The settings webhook inventory contract is supplied by the pinned Kratos patch.
+x-kratos-runtime: &kratos-runtime
+  image: ${IDENTITY_KRATOS_IMAGE:-geul-identity-kratos:local}
+  build:
+    context: ..
+    dockerfile: Dockerfile.kratos
+
 x-kratos-environment: &kratos-environment
   <<: *kratos-internal-auth-environment
   TOKEN_SIGNING_SECRET: ${BACKEND_TOKEN_SIGNING_SECRET:?set BACKEND_TOKEN_SIGNING_SECRET for trusted backend calls}
@@ -188,7 +195,7 @@ x-kratos-environment: &kratos-environment
 
 services:
   kratos-migrate-prod:
-    image: oryd/kratos@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    <<: *kratos-runtime
     container_name: geul-kratos-migrate-${IDENTITY_STACK_CONTAINER_SUFFIX:-identity-prod}
     command: migrate sql up -e --yes
     environment:
@@ -196,7 +203,7 @@ services:
     restart: "no"
 
   kratos-prod:
-    image: oryd/kratos@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    <<: *kratos-runtime
     container_name: geul-kratos-${IDENTITY_STACK_CONTAINER_SUFFIX:-identity-prod}
     ports:
       - "${IDENTITY_STACK_BIND_HOST:-127.0.0.1}:${IDENTITY_STACK_KRATOS_PUBLIC_PORT:-14433}:4433"
@@ -222,7 +229,7 @@ services:
       retries: 3
 
   kratos-courier-prod:
-    image: oryd/kratos@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    <<: *kratos-runtime
     container_name: geul-kratos-courier-${IDENTITY_STACK_CONTAINER_SUFFIX:-identity-prod}
     networks:
       default: {}

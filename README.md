@@ -77,8 +77,28 @@ not contain migration-only cutover tools or deployment state.
 
 Release images are intended to use these repository candidates:
 
+- `registry.dsub.io/echovisionlab/geul-identity-kratos`
 - `registry.dsub.io/echovisionlab/geul-identity-oathkeeper`
 - `registry.dsub.io/echovisionlab/geul-identity-mcp-oauth-facade`
+
+## Kratos settings inventory
+
+`Dockerfile.kratos` builds the pinned upstream revision with a narrow settings
+webhook patch. Public identity/session JSON still excludes credentials. The
+request-local webhook inventory contains only sign-in identifiers and passkey
+IDs; account policy and audit remain owned by the API's Account domain.
+The stock Kratos image does not supply this contract and must not be paired
+with these settings templates. Compose builds the matching image by default.
+
+The image build exercises actual WebAuthn registration, webhook serialization,
+and the checked-in Jsonnet template. To prepare the API integration runtime:
+
+```sh
+docker build -f Dockerfile.kratos -t geul-identity-kratos:local .
+```
+
+Use `GEUL_TEST_KRATOS_IMAGE` for an explicit locally built image when running API
+integration tests. Runtime, migration, and courier must use the same image.
 
 ## License
 
