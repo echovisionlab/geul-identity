@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/echovisionlab/geul-identity/compare/v0.1.1...v0.1.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **identity:** preserve settings credential inventory across Kratos hooks ([#5](https://github.com/echovisionlab/geul-identity/issues/5)) ([4e51cb2](https://github.com/echovisionlab/geul-identity/commit/4e51cb2a0638aa07038efcd60f3d2e6a40511118))
+
 ## [0.1.1](https://github.com/echovisionlab/geul-identity/compare/v0.1.0...v0.1.1) (2026-09-02)
 
 
