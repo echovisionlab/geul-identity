@@ -1,0 +1,7 @@
+**
+!patches/
+!patches/kratos-v26.2.0-settings-inventory.patch
+!config/
+!config/kratos/
+!config/kratos/hooks/
+!config/kratos/hooks/after-settings-passkey.jsonnet

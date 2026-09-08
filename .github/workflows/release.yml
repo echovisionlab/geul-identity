@@ -54,6 +54,10 @@ jobs:
             title: MCP OAuth facade
             dockerfile: Dockerfile.mcp-oauth-facade
             image_name: registry.dsub.io/echovisionlab/geul-identity-mcp-oauth-facade
+          - component: kratos
+            title: Kratos
+            dockerfile: Dockerfile.kratos
+            image_name: registry.dsub.io/echovisionlab/geul-identity-kratos
           - component: oathkeeper
             title: Oathkeeper
             dockerfile: Dockerfile.oathkeeper

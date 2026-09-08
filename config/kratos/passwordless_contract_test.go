@@ -276,14 +276,13 @@ func TestCredentialSettingsHooksProjectFinalAndPreviousSnapshots(t *testing.T) {
 		"code": map[string]any{"type": "code", "identifiers": []any{"member@example.com"}},
 	}
 	ctx := map[string]any{
-		"flow": map[string]any{"id": "settings-flow-1", "type": "browser"},
-		"identity": map[string]any{
-			"id":          "identity-1",
-			"credentials": finalCredentials,
+		"flow":     map[string]any{"id": "settings-flow-1", "type": "browser"},
+		"identity": map[string]any{"id": "identity-1"},
+		"session":  map[string]any{"identity": map[string]any{"id": "identity-1"}},
+		"credential_change": map[string]any{
+			"credentials":          finalCredentials,
+			"previous_credentials": previousCredentials,
 		},
-		"session": map[string]any{"identity": map[string]any{
-			"credentials": previousCredentials,
-		}},
 	}
 	for _, method := range []string{"oidc", "passkey"} {
 		output := evaluateHook(t, "hooks/after-settings-"+method+".jsonnet", ctx)
@@ -797,6 +796,16 @@ func assertNoUserFacingIdentityJargon(t *testing.T, value any) {
 	case []any:
 		for _, child := range typed {
 			assertNoUserFacingIdentityJargon(t, child)
+		}
+	}
+}
+
+func TestCredentialSettingsHooksFailClosedWithStockPublicIdentity(t *testing.T) {
+	ctx := map[string]any{"identity": map[string]any{"id": "identity-1"}, "session": map[string]any{"identity": map[string]any{"id": "identity-1"}}, "flow": map[string]any{"id": "flow-1"}}
+	for _, method := range []string{"oidc", "passkey"} {
+		output := evaluateHook(t, "hooks/after-settings-"+method+".jsonnet", ctx)
+		if output["credentials_present"] != false || output["previous_credentials_present"] != false {
+			t.Fatalf("missing inventory was accepted: %#v", output)
 		}
 	}
 }
