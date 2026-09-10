@@ -28,6 +28,10 @@ serve:
         - Content-Type
         - X-CSRF-Token
       exposed_headers:
+        - WWW-Authenticate
+        - Retry-After
+        - RateLimit
+        - RateLimit-Policy
         - Content-Type
         - Set-Cookie
       allow_credentials: true
