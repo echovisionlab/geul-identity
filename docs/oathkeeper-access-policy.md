@@ -1,8 +1,7 @@
 # Oathkeeper access boundary
 
 This document describes the public policy shape in
-`config/oathkeeper/routes.yml` and the generated `rules.yml`. It is a contract
-guide, not a deployment manifest. The deployment must provide exact origins,
+`config/oathkeeper/routes.yml` and the generated `rules.yml`. Deployment provides exact origins,
 service URLs, and the three authentication-boundary names before rendering or
 starting Oathkeeper.
 
@@ -25,8 +24,7 @@ starting Oathkeeper.
 - The MCP route accepts only a Hydra OAuth access token with exact issuer
   `MCP_OAUTH_ISSUER_URL`, exact `mcp` scope, and audience `${SITE_ORIGIN}/mcp`.
 - The MCP OAuth introspection extension contains one typed authenticated
-  context. Personal-access-token authenticators, raw bearer forwarding, and
-  legacy identity/member header families are not part of this boundary.
+  context. Oathkeeper strips the bearer before forwarding the request.
 - Remote authorization receives the deployment's
   `INTERNAL_SERVICE_HEADER_NAME` and rejects requests that contain the bearer,
   browser-cookie, or session transport headers.

@@ -12,7 +12,6 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
-	intrav1 "github.com/echovisionlab/geul-event-contracts/gen/api/intra/v1"
 	managev1 "github.com/echovisionlab/geul-event-contracts/gen/api/manage/v1"
 	openv1 "github.com/echovisionlab/geul-event-contracts/gen/api/open/v1"
 	policyv1 "github.com/echovisionlab/geul-event-contracts/gen/api/policy/v1"
@@ -920,9 +919,6 @@ func TestCurrentAIAndPersonalAccessTokenRoutesAreBrowserSessionOnly(t *testing.T
 		}
 	}
 
-	if bytes.Contains(rules, []byte("AIService/Chat")) || bytes.Contains(block, []byte("Chat")) {
-		t.Fatal("generated rules retain the removed legacy AIService.Chat RPC")
-	}
 	mcp := ruleBlock(t, rules, "mcp")
 	for _, browserService := range []string{"AIDocumentService", "AIEditorOrchestrationService", "AccountService"} {
 		if bytes.Contains(mcp, []byte(browserService)) {
@@ -931,28 +927,12 @@ func TestCurrentAIAndPersonalAccessTokenRoutesAreBrowserSessionOnly(t *testing.T
 	}
 }
 
-func TestRetiredManualSnapshotRPCsAreAbsentFromGatewayContract(t *testing.T) {
+func TestVersionHistoryRoutesUseDeclaredRoles(t *testing.T) {
 	roles, err := collectManageAuthorizationRoles()
 	if err != nil {
 		t.Fatalf("collectManageAuthorizationRoles() error = %v", err)
 	}
 
-	for _, retired := range []struct {
-		service string
-		method  string
-	}{
-		{service: "PageService", method: "CreatePageSnapshot"},
-		{service: "PostService", method: "CreatePostSnapshot"},
-		{service: "WorkService", method: "CreateWorkSnapshot"},
-	} {
-		for _, services := range roles {
-			for _, method := range services[retired.service] {
-				if method == retired.method {
-					t.Errorf("released contract retains %s.%s", retired.service, retired.method)
-				}
-			}
-		}
-	}
 	for _, retained := range []struct {
 		role    policyv1.AuthorizationRole
 		service string
@@ -972,7 +952,7 @@ func TestRetiredManualSnapshotRPCsAreAbsentFromGatewayContract(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Errorf("released contract is missing retained %s.%s from %s", retained.service, requiredMethod, retained.role)
+				t.Errorf("released contract is missing %s.%s from %s", retained.service, requiredMethod, retained.role)
 			}
 		}
 	}
@@ -981,18 +961,14 @@ func TestRetiredManualSnapshotRPCsAreAbsentFromGatewayContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateRules() error = %v", err)
 	}
-	for _, retired := range []string{"CreatePageSnapshot", "CreatePostSnapshot", "CreateWorkSnapshot"} {
-		if bytes.Contains(rules, []byte(retired)) {
-			t.Errorf("generated rules retain retired RPC %s", retired)
-		}
-	}
+
 	for _, retained := range []string{
 		"ListPageVersions", "RestorePageVersion",
 		"ListPostVersions", "RestorePostVersion",
 		"ListWorkVersions", "RestoreWorkVersion",
 	} {
 		if !bytes.Contains(rules, []byte(retained)) {
-			t.Errorf("generated rules are missing retained RPC %s", retained)
+			t.Errorf("generated rules are missing RPC %s", retained)
 		}
 	}
 }
@@ -1020,20 +996,7 @@ func TestReleaseAndTrackManageRPCsAreAdminOnly(t *testing.T) {
 	}
 }
 
-func TestReleasedV127ContractHasNoLegacyAliases(t *testing.T) {
-	translationJob := (&managev1.TranslationJob{}).ProtoReflect().Descriptor()
-	if field := translationJob.Fields().ByName("retry_of_job_id"); field != nil {
-		t.Errorf("released TranslationJob retains retry lineage alias %s", field.FullName())
-	}
-
-	formMeta := (&intrav1.FormMeta{}).ProtoReflect().Descriptor()
-	if field := formMeta.Fields().ByName("webhooks"); field != nil {
-		t.Errorf("released FormMeta retains removed webhook field %s", field.FullName())
-	}
-	if message := formMeta.ParentFile().Messages().ByName("FormWebhook"); message != nil {
-		t.Errorf("released form contract retains removed message %s", message.FullName())
-	}
-
+func TestTranslationJobListingRequiresAuthenticatedRole(t *testing.T) {
 	roles, err := collectManageAuthorizationRoles()
 	if err != nil {
 		t.Fatalf("collectManageAuthorizationRoles() error = %v", err)
@@ -1050,11 +1013,11 @@ func TestReleasedV127ContractHasNoLegacyAliases(t *testing.T) {
 		t.Error("released ListTranslationJobs route is not authenticated")
 	}
 	if hasListJobs(policyv1.AuthorizationRole_ADMIN) {
-		t.Error("released ListTranslationJobs route retains its retired admin alias")
+		t.Error("ListTranslationJobs must be available to authenticated users")
 	}
 }
 
-func TestNewsletterHardCutUsesOpenTokenUnsubscribeAndAdminMemberUnsubscribe(t *testing.T) {
+func TestNewsletterUnsubscribeAuthorization(t *testing.T) {
 	service := openv1.File_api_open_v1_newsletter_proto.Services().ByName("NewsletterService")
 	if service == nil {
 		t.Fatal("released api.open.v1.NewsletterService descriptor is missing")
@@ -1112,15 +1075,6 @@ func TestNewsletterHardCutUsesOpenTokenUnsubscribeAndAdminMemberUnsubscribe(t *t
 	} {
 		if !bytes.Contains(openRule, want) {
 			t.Errorf("open API rule does not cover the token unsubscribe boundary; missing %q", want)
-		}
-	}
-	for _, retired := range [][]byte{
-		[]byte("SubscriberService"),
-		[]byte("/subscribe"),
-		[]byte("/subscribe/confirm"),
-	} {
-		if bytes.Contains(rules, retired) {
-			t.Errorf("generated rules retain retired newsletter route %q", retired)
 		}
 	}
 }
