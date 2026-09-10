@@ -396,7 +396,7 @@ func (h *Handler) beginDynamic(writer http.ResponseWriter) bool {
 		return true
 	default:
 		writer.Header().Set("Retry-After", "1")
-		writeProtocolError(writer, http.StatusTooManyRequests, "temporarily_unavailable", "dynamic client request concurrency exceeded")
+		writeProtocolError(writer, http.StatusServiceUnavailable, "temporarily_unavailable", "dynamic client request concurrency exceeded")
 		return false
 	}
 }

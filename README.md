@@ -106,3 +106,11 @@ Copyright 2026 Echo Vision Lab. Licensed under the PolyForm Noncommercial
 License 1.0.0. See [LICENSE.md](LICENSE.md).
 
 Maintainer: state303 <state303@dsub.io>.
+
+### HTTP admission
+
+Dynamic OAuth client concurrency exhaustion returns HTTP 503 with
+`Retry-After: 1` and the existing `temporarily_unavailable` OAuth error body.
+This is server capacity, not a client's time-based quota. Public MCP retains its
+OAuth Bearer challenge with protected-resource metadata; cookie-session RPC and
+upload routes do not gain PAT authentication through this response convention.

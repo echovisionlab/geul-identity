@@ -858,3 +858,26 @@ func slicesEqual(left, right []string) bool {
 	}
 	return true
 }
+
+func TestDynamicCapacityIsServiceOverload(t *testing.T) {
+	handler := newTestHandler(t, http.NotFoundHandler(), http.NotFoundHandler(), rejectingHTTPClient())
+	for i := 0; i < cap(handler.dynamicSlots); i++ {
+		if !handler.beginDynamic(httptest.NewRecorder()) {
+			t.Fatal("capacity rejected early")
+		}
+	}
+	response := httptest.NewRecorder()
+	if handler.beginDynamic(response) {
+		t.Fatal("accepted beyond capacity")
+	}
+	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" {
+		t.Fatalf("status=%d headers=%v", response.Code, response.Header())
+	}
+	if !strings.Contains(response.Body.String(), `"error":"temporarily_unavailable"`) {
+		t.Fatal(response.Body.String())
+	}
+	handler.endDynamic()
+	if !handler.beginDynamic(httptest.NewRecorder()) {
+		t.Fatal("released capacity unavailable")
+	}
+}
