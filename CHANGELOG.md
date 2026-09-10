@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/echovisionlab/geul-identity/compare/v0.1.2...v0.1.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **oauth:** distinguish capacity overload from client quotas ([#7](https://github.com/echovisionlab/geul-identity/issues/7)) ([065a13f](https://github.com/echovisionlab/geul-identity/commit/065a13f87db682e17f482cedefa42b04a90cf5cb))
+
 ## [0.1.2](https://github.com/echovisionlab/geul-identity/compare/v0.1.1...v0.1.2) (2026-09-08)
 
 
