@@ -2,8 +2,7 @@
 
 Geul Identity contains the Ory Kratos and Oathkeeper authentication boundary,
 MCP OAuth facade, generated access rules, and the contract tests that keep them
-aligned. It is a public, history-free distribution of the runtime boundary;
-deployment manifests and credentials belong to the deployment owner.
+aligned. Deployment manifests and credentials belong to the deployment owner.
 
 ## Runtime contract
 
