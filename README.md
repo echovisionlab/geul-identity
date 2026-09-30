@@ -36,6 +36,14 @@ The three authentication-boundary names above are the only name source for the
 typed auth context, Oathkeeper rule generation, and Oathkeeper rendering. The
 renderer rejects missing, malformed, colliding, or protocol-reserved names.
 
+## MCP OAuth facade
+
+The facade validates MCP authorization, token, and registration input before
+calling Hydra. Its internal proxy transport carries request cancellation,
+filters forwarded headers, and returns Hydra redirects to the MCP client
+without following them. Dynamic registration responses keep their
+registration URL on the configured issuer.
+
 ## Rendering and placeholders
 
 `config/oathkeeper/oathkeeper.yml` is a template. Its `__KRATOS_PUBLIC_URL__`,
