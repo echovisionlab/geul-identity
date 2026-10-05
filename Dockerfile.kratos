@@ -16,10 +16,10 @@ COPY config/kratos/hooks/after-settings-passkey.jsonnet /fixtures/after-settings
 
 ENV CGO_ENABLED=1
 ENV CGO_CPPFLAGS=-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600
-ENV GEUL_CREDENTIAL_SETTINGS_TEMPLATE=/fixtures/after-settings-passkey.jsonnet
 
 RUN patch --batch --forward --strip=1 < /patches/settings-inventory.patch \
-    && go test -tags sqlite -count=1 ./selfservice/hook ./selfservice/flow/settings ./selfservice/strategy/passkey \
+    && GEUL_TEST_SETTINGS_TEMPLATE_PATH=/fixtures/after-settings-passkey.jsonnet \
+      go test -tags sqlite -count=1 ./selfservice/hook ./selfservice/flow/settings ./selfservice/strategy/passkey \
       -run 'TestGeul|TestCompleteSettings' \
     && go build -tags sqlite -mod=readonly -trimpath -buildvcs=false \
       -ldflags="-s -w -X github.com/ory/kratos/driver/config.Version=v26.2.0-geul -X github.com/ory/kratos/driver/config.Commit=${KRATOS_COMMIT}" \
