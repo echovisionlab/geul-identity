@@ -32,48 +32,148 @@ jobs:
     name: Contracts and static checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      run_full: ${{ steps.scope.outputs.run_full }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Classify pull request changes
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          run_full=true
+          reason="full validation is required"
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] &&
+             [[ "${HEAD_REF}" = release-please--* ]] &&
+             [ -n "${BASE_SHA}" ] &&
+             [ -n "${HEAD_SHA}" ]; then
+            changed_files="$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")"
+            metadata_only=true
+
+            if [ -z "${changed_files}" ]; then
+              metadata_only=false
+            fi
+
+            while IFS= read -r path; do
+              case "${path}" in
+                .release-please-manifest.json|CHANGELOG.md|package.json|package-lock.json) ;;
+                *) metadata_only=false ;;
+              esac
+            done <<< "${changed_files}"
+
+            if [ "${metadata_only}" = "true" ]; then
+              if ! python3 - "${BASE_SHA}" "${HEAD_SHA}" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          base_sha, head_sha = sys.argv[1:]
+
+          def read_package(revision: str) -> tuple[str, dict]:
+              raw = subprocess.check_output(
+                  ["git", "show", f"{revision}:package.json"],
+                  text=True,
+              )
+              package = json.loads(raw)
+              version = package.pop("version", None)
+              if not isinstance(version, str):
+                  raise SystemExit(1)
+              return version, package
+
+          base_version, base_package = read_package(base_sha)
+          head_version, head_package = read_package(head_sha)
+          if base_version == head_version or base_package != head_package:
+              raise SystemExit(1)
+
+          def read_lock(revision: str, package_version: str) -> dict:
+              raw = subprocess.check_output(
+                  ["git", "show", f"{revision}:package-lock.json"],
+                  text=True,
+              )
+              lock = json.loads(raw)
+              version = lock.pop("version", None)
+              root_version = lock["packages"][""].pop("version", None)
+              if version != package_version or root_version != package_version:
+                  raise SystemExit(1)
+              return lock
+
+          if read_lock(base_sha, base_version) != read_lock(head_sha, head_version):
+              raise SystemExit(1)
+          PY
+              then
+                metadata_only=false
+              fi
+            fi
+
+            if [ "${metadata_only}" = "true" ]; then
+              run_full=false
+              reason="Release Please metadata-only pull request"
+            fi
+          fi
+
+          echo "run_full=${run_full}" >> "${GITHUB_OUTPUT}"
+          echo "reason=${reason}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### CI scope"
+            echo
+            echo "${reason}."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Set up Node.js
+        if: steps.scope.outputs.run_full == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
 
       - name: Install Node dependencies
+        if: steps.scope.outputs.run_full == 'true'
         run: npm ci
 
       - name: Set up Go
+        if: steps.scope.outputs.run_full == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Check formatting
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           npm run format:check:go
           npm run format:check:prettier
 
       - name: Check module integrity
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           go mod tidy -diff
           go mod verify
 
       - name: Validate workflows
+        if: steps.scope.outputs.run_full == 'true'
         run: go run "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}" .github/workflows/*.yml
 
       - name: Run Go static checks
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           go vet ./...
           go run "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}" ./...
           go run "golang.org/x/tools/cmd/deadcode@${DEADCODE_VERSION}" -test ./...
 
       - name: Run Go tests with race detection and coverage
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           go test -race -covermode=atomic -coverpkg=./internal/oathkeeperrules -coverprofile="${RUNNER_TEMP}/coverage.out" ./...
           go tool cover -func="${RUNNER_TEMP}/coverage.out"
@@ -81,18 +181,22 @@ jobs:
           test "${total}" = "100.0%"
 
       - name: Build Go packages
+        if: steps.scope.outputs.run_full == 'true'
         run: go build ./...
 
       - name: Generate and validate configuration and schemas
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           npm run check:oathkeeper-rules
           npm run generate:spicedb-schema
           npm run check:spicedb:zed
 
       - name: Verify Kratos settings contract in the runtime image
+        if: steps.scope.outputs.run_full == 'true'
         run: docker build --file Dockerfile.kratos --tag geul-identity-kratos:ci .
 
       - name: Run Node contracts and type checks
+        if: steps.scope.outputs.run_full == 'true'
         run: |
           npm test
           npm run check:compose
@@ -104,6 +208,7 @@ jobs:
     name: Runtime integration
     runs-on: ubuntu-latest
     needs: quality
+    if: needs.quality.outputs.run_full == 'true'
     timeout-minutes: 30
     steps:
       - name: Checkout
