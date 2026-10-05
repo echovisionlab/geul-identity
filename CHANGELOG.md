@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/echovisionlab/geul-identity/compare/v0.1.4...v0.2.0) (2026-10-05)
+
+
+### Features
+
+* authenticate streaming upload source downloads ([#13](https://github.com/echovisionlab/geul-identity/issues/13)) ([d1ae6d3](https://github.com/echovisionlab/geul-identity/commit/d1ae6d31a48122beeabb51a292637f404e201bea))
+
 ## [0.1.4](https://github.com/echovisionlab/geul-identity/compare/v0.1.3...v0.1.4) (2026-09-30)
 
 
