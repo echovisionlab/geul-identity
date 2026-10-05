@@ -12,9 +12,12 @@ serve:
     # Exact public HTTPS origin rules therefore use HAProxy's overwritten
     # X-Forwarded-Proto value instead of the internal cleartext hop.
     trust_forwarded_headers: true
+    # Go listener read/write timeouts are total transfer budgets, not idle
+    # limits. The API bounds normal requests and applies rolling idle deadlines
+    # to media streams; HAProxy bounds public request headers and inactivity.
     timeout:
-      read: 5m
-      write: 5m
+      read: 0s
+      write: 0s
       idle: 120s
   api:
     host: 0.0.0.0

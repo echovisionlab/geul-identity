@@ -774,6 +774,22 @@ func staticTailRules(routes routeConfig) string {
 # Upload endpoint - requires authentication, exact API origin only
 # =============================================================================
 
+- id: upload-source
+  version: %[1]s
+  match:
+    url: '<%[4]s/upload/source>'
+    methods:
+      - GET
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: header
+  upstream:
+    url: '%[5]s'
+    strip_path: /api
+
 - id: upload-endpoint
   version: %[1]s
   match:
