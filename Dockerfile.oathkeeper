@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -6,6 +6,7 @@ ARG OATHKEEPER_COMMIT=c84dbe07ecbf6f10154f04ec49b137a115155289
 ARG OATHKEEPER_SOURCE_SHA256=65f67729239f9476b3e3d286634d9b14dfd04cdba06173bef9330e8d42ff7b22
 
 WORKDIR /src
+ENV GOMAXPROCS=2
 
 RUN apk add --no-cache ca-certificates curl patch \
     && curl --fail --location --silent --show-error \
@@ -16,19 +17,22 @@ RUN apk add --no-cache ca-certificates curl patch \
     && rm /oathkeeper.tar.gz
 
 COPY patches/oathkeeper-v26.2.0-remote-json-hard-cut.patch /patches/remote-json-hard-cut.patch
+COPY patches/oathkeeper-v26.2.0-security-dependencies.patch /patches/security-dependencies.patch
 
 RUN patch --batch --forward --strip=1 < /patches/remote-json-hard-cut.patch \
-    && go test -count=1 ./pipeline/authz ./pipeline/errors \
+    && patch --batch --forward --strip=1 < /patches/security-dependencies.patch \
+    && go test -p=2 -count=1 ./pipeline/authz ./pipeline/errors ./pipeline/mutate \
     && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-      go build -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" \
+      go build -p=2 -mod=readonly -trimpath -buildvcs=false -ldflags="-s -w" \
       -o /out/oathkeeper .
 
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS config-renderer-builder
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS config-renderer-builder
 
 ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /identity
+ENV GOMAXPROCS=2
 
 COPY go.mod go.sum ./
 COPY cmd/render-oathkeeper-config ./cmd/render-oathkeeper-config
@@ -36,10 +40,10 @@ COPY internal/authboundary ./internal/authboundary
 COPY internal/oathkeeperconfig ./internal/oathkeeperconfig
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-      go build -trimpath -buildvcs=false -ldflags="-s -w" \
+      go build -p=2 -trimpath -buildvcs=false -ldflags="-s -w" \
       -o /out/render-oathkeeper-config ./cmd/render-oathkeeper-config
 
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 ARG OATHKEEPER_COMMIT=c84dbe07ecbf6f10154f04ec49b137a115155289
 

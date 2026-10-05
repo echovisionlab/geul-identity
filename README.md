@@ -88,6 +88,15 @@ Release images are intended to use these repository candidates:
 - `registry.dsub.io/echovisionlab/geul-identity-oathkeeper`
 - `registry.dsub.io/echovisionlab/geul-identity-mcp-oauth-facade`
 
+The custom Kratos and Oathkeeper images also apply the checked-in
+`*-v26.2.0-security-dependencies.patch` files to the upstream Go module locks.
+Oathkeeper includes the matching OpenTelemetry HTTP client API adaptation.
+Kratos uses the maintained GitHub SDK with provider contract tests that preserve
+existing claim and email mapping.
+The Docker builds run the existing authentication patch tests with the refreshed
+dependencies before compiling the runtime. The upstream source revision and
+authentication database/configuration contract are still v26.2.0.
+
 ## Kratos settings inventory
 
 `Dockerfile.kratos` builds the pinned upstream revision with a narrow settings

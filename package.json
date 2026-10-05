@@ -10,12 +10,12 @@
     "url": "git+https://github.com/echovisionlab/geul-identity.git"
   },
   "engines": {
-    "node": "24.19.0"
+    "node": "24.21.0"
   },
   "scripts": {
     "check:compose": "docker compose --env-file scripts/ci/identity-compose.env -f compose/identity.yml config >/dev/null",
     "check:oathkeeper-rules": "GOWORK=off go run ./cmd/generate-oathkeeper-rules --check",
-    "check:spicedb:zed": "docker run --rm -v \"$PWD/config/spicedb/schema.generated.zed:/schema.zed:ro\" authzed/zed@sha256:baa7a4a5e77b33875f38ba293c6eb618702e742aed5561e68c1c3490d42d2e1f validate /schema.zed --type zed --fail-on-warn",
+    "check:spicedb:zed": "docker run --rm -v \"$PWD/config/spicedb/schema.generated.zed:/schema.zed:ro\" authzed/zed@sha256:075810514ce2b5b494240b8015dd1ee686b47c00e238a5925eaf5f5fe3c8d02e validate /schema.zed --type zed --fail-on-warn",
     "check:yaml": "node scripts/ci/validate-yaml.mjs",
     "format:go": "find cmd config internal -name '*.go' -type f -exec gofmt -w {} +",
     "format:prettier": "prettier --write \"**/*.{js,mjs,json,md,ts,yml,yaml}\"",
@@ -33,9 +33,9 @@
     "@authzed/authzed-node": "1.6.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "knip": "^6.32.2",
-    "prettier": "^3.8.4",
+    "knip": "^6.39.0",
+    "prettier": "^3.9.9",
     "typescript": "^7.0.2",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   }
 }
