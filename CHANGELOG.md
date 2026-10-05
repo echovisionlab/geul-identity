@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/echovisionlab/geul-identity/compare/v0.2.0...v0.2.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **build:** scope Kratos fixture path to its test command ([#15](https://github.com/echovisionlab/geul-identity/issues/15)) ([a4708d3](https://github.com/echovisionlab/geul-identity/commit/a4708d339a40658b48fd146a420beeab0a1f71ab))
+* **deps:** refresh identity and patched authentication dependencies ([#18](https://github.com/echovisionlab/geul-identity/issues/18)) ([e449d47](https://github.com/echovisionlab/geul-identity/commit/e449d4787f0c3571766803bda0de14c2b3c653e1))
+
 ## [0.2.0](https://github.com/echovisionlab/geul-identity/compare/v0.1.4...v0.2.0) (2026-10-05)
 
 
