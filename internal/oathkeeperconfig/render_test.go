@@ -35,6 +35,8 @@ func TestRenderRepositoryTemplates(t *testing.T) {
 	assertFileContains(t, filepath.Join(outputDirectory, "rules.yml"), `https://site\.example/mcp`, "https://site.example/.well-known/oauth-protected-resource/mcp")
 	assertFileContains(t, filepath.Join(outputDirectory, "oathkeeper.yml"), "X-Internal-Service", "__Host-session")
 	assertFileContains(t, filepath.Join(outputDirectory, "rules.yml"), "X-Authenticated-Context-B64", "X-Internal-Service")
+	assertFileContains(t, filepath.Join(outputDirectory, "oathkeeper.yml"), "      read: 0s\n      write: 0s\n      idle: 120s")
+	assertFileContains(t, filepath.Join(outputDirectory, "rules.yml"), `url: '<https://site\.example/api/upload/source>'`)
 	for _, name := range []string{"oathkeeper.yml", "rules.yml"} {
 		raw, err := os.ReadFile(filepath.Join(outputDirectory, name))
 		if err != nil {

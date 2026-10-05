@@ -461,6 +461,22 @@
 # Upload endpoint - requires authentication, exact API origin only
 # =============================================================================
 
+- id: upload-source
+  version: v26.2.0
+  match:
+    url: '<https://site\.example\.invalid/api/upload/source>'
+    methods:
+      - GET
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: header
+  upstream:
+    url: 'http://api.example.invalid:8000'
+    strip_path: /api
+
 - id: upload-endpoint
   version: v26.2.0
   match:
