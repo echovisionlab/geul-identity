@@ -16,7 +16,7 @@ const parityFixturePath = path.join(
   "config/spicedb/fixtures/parity.json",
 );
 const spicedbImage =
-  "authzed/spicedb:v1.56.0@sha256:c8a558a6cc1f9379fcdcab0171b623d65e7e5f95c998ebb7f937ca00a7c1598c";
+  "authzed/spicedb:v1.56.2@sha256:aa96009a0477f8a759149823407d47ad16d1a74390bae3102b3b0b7143502764";
 const token = "geul-spicedb-integration-token";
 const name = `geul-spicedb-test-${process.pid}-${Date.now()}`;
 const fullyConsistent = v1.Consistency.create({
@@ -262,7 +262,7 @@ async function main() {
     parity.after_delete.allowed,
   );
   console.log(
-    "SpiceDB v1.56 schema/write/check/delete fully-consistent integration passed",
+    "SpiceDB v1.56.2 schema/write/check/delete fully-consistent integration passed",
   );
 }
 

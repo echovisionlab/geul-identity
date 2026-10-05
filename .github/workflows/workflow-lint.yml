@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
       - name: Check workflows and release configuration
         run: |
-          GOWORK=off go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+          GOWORK=off go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           if [ -f release-please-config.json ]; then
             jq empty release-please-config.json
           fi

@@ -123,16 +123,16 @@ func (h *Handler) handleProtectedResourceMetadata(writer http.ResponseWriter, _ 
 
 func (h *Handler) handleAuthorizationServerMetadata(writer http.ResponseWriter, request *http.Request) {
 	metadata := map[string]any{
-		"issuer":                                h.contract.IssuerURL,
-		"authorization_endpoint":                h.contract.IssuerURL + "/oauth2/auth",
-		"token_endpoint":                        h.contract.IssuerURL + "/oauth2/token",
-		"revocation_endpoint":                   h.contract.IssuerURL + "/oauth2/revoke",
-		"jwks_uri":                              h.contract.IssuerURL + "/.well-known/jwks.json",
-		"scopes_supported":                      []string{Scope, OfflineAccessScope},
-		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"code_challenge_methods_supported":      []string{"S256"},
-		"token_endpoint_auth_methods_supported": []string{"none", "client_secret_basic", "client_secret_post", "private_key_jwt"},
+		"issuer":                                           h.contract.IssuerURL,
+		"authorization_endpoint":                           h.contract.IssuerURL + "/oauth2/auth",
+		"token_endpoint":                                   h.contract.IssuerURL + "/oauth2/token",
+		"revocation_endpoint":                              h.contract.IssuerURL + "/oauth2/revoke",
+		"jwks_uri":                                         h.contract.IssuerURL + "/.well-known/jwks.json",
+		"scopes_supported":                                 []string{Scope, OfflineAccessScope},
+		"response_types_supported":                         []string{"code"},
+		"grant_types_supported":                            []string{"authorization_code", "refresh_token"},
+		"code_challenge_methods_supported":                 []string{"S256"},
+		"token_endpoint_auth_methods_supported":            []string{"none", "client_secret_basic", "client_secret_post", "private_key_jwt"},
 		"token_endpoint_auth_signing_alg_values_supported": []string{"RS256"},
 		"revocation_endpoint_auth_methods_supported":       []string{"none", "client_secret_basic", "client_secret_post", "private_key_jwt"},
 	}

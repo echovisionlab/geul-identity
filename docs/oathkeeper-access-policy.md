@@ -5,13 +5,13 @@ This document describes the public policy shape in
 service URLs, and the three authentication-boundary names before rendering or
 starting Oathkeeper.
 
-<!-- manage-inventory: authenticated=117 author=25 admin=243 total=385 -->
+<!-- manage-inventory: authenticated=118 author=25 admin=245 total=388 -->
 
 | Role          | Count |
 | ------------- | ----: |
-| Authenticated |   117 |
+| Authenticated |   118 |
 | Author        |    25 |
-| Admin         |   243 |
+| Admin         |   245 |
 
 ## Boundary rules
 
