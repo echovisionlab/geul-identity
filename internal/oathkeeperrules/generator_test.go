@@ -114,6 +114,51 @@ func TestGeneratedRulesUseConfiguredExactOrigins(t *testing.T) {
 	}
 }
 
+func TestUploadSourceAllowsOnlyAuthenticatedExactGET(t *testing.T) {
+	routes := repositoryRouteConfig(t)
+	rules, err := generateRules(routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := ruleBlock(t, rules, "upload-source")
+	for _, want := range []string{
+		"    methods:\n      - GET\n  authenticators:\n    - handler: cookie_session\n",
+		"  authorizer:\n    handler: allow\n  mutators:\n    - handler: header\n",
+		fmt.Sprintf("  upstream:\n    url: '%s'\n    strip_path: /api\n", routes.Upstreams.API),
+	} {
+		if !bytes.Contains(block, []byte(want)) {
+			t.Fatalf("upload-source missing policy %q", want)
+		}
+	}
+	matcher := ruleURLRegexp(t, block)
+	if !matcher.MatchString(routes.Origins.API + "/api/upload/source") {
+		t.Fatal("source GET matcher does not admit the configured public path")
+	}
+	for _, path := range []string{"/upload/source", "/api/upload/source/", "/api/upload/source/child", "/api/upload/other", "/api/upload/source-more"} {
+		if matcher.MatchString(routes.Origins.API + path) {
+			t.Errorf("source GET matcher admits unrelated path %s", path)
+		}
+	}
+	for _, origin := range []string{"https://untrusted.example", routes.Origins.APIInternal} {
+		if matcher.MatchString(origin + "/api/upload/source") {
+			t.Errorf("source GET matcher admits unrelated origin %s", origin)
+		}
+	}
+	// All GET-capable rules must continue denying arbitrary upload paths.
+	for _, candidate := range bytes.Split(rules, []byte("\n- id: ")) {
+		if !bytes.Contains(candidate, []byte("      - GET\n")) {
+			continue
+		}
+		candidateMatcher := ruleURLRegexp(t, candidate)
+		if candidateMatcher.MatchString(routes.Origins.API + "/api/upload/other") {
+			t.Fatalf("GET-capable rule admits unrelated upload path:\n%s", candidate)
+		}
+	}
+	if bytes.Contains(ruleBlock(t, rules, "upload-endpoint"), []byte("      - GET\n")) {
+		t.Fatal("upload endpoint gained a broad GET allowance")
+	}
+}
+
 func TestManageRulesGroupEveryExactRPCByRole(t *testing.T) {
 	routes := repositoryRouteConfig(t)
 	rules, err := generateRules(routes)
@@ -341,7 +386,7 @@ func TestBrowserAuthenticatedRulesOverwriteCanonicalSessionHeaderOnly(t *testing
 	if err != nil {
 		t.Fatalf("generateRules() error = %v", err)
 	}
-	for _, id := range []string{"manage-admin", "manage-auth", "collab-websocket", "upload-endpoint"} {
+	for _, id := range []string{"manage-admin", "manage-auth", "collab-websocket", "upload-endpoint", "upload-source"} {
 		block := ruleBlock(t, rules, id)
 		if !bytes.Contains(block, []byte("    - handler: header\n")) {
 			t.Errorf("authenticated rule %s does not use the trusted header mutator:\n%s", id, block)

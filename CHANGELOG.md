@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/echovisionlab/geul-identity/compare/v0.1.4...v0.2.0) (2026-10-05)
+
+
+### Features
+
+* authenticate streaming upload source downloads ([#13](https://github.com/echovisionlab/geul-identity/issues/13)) ([d1ae6d3](https://github.com/echovisionlab/geul-identity/commit/d1ae6d31a48122beeabb51a292637f404e201bea))
+
+## [0.1.4](https://github.com/echovisionlab/geul-identity/compare/v0.1.3...v0.1.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* **oauth:** isolate facade proxy transport ownership ([#11](https://github.com/echovisionlab/geul-identity/issues/11)) ([214c094](https://github.com/echovisionlab/geul-identity/commit/214c0940323dfcdf19550910159bb1c5e0ae910d))
+
 ## [0.1.3](https://github.com/echovisionlab/geul-identity/compare/v0.1.2...v0.1.3) (2026-09-10)
 
 

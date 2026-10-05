@@ -313,7 +313,7 @@
 +			t.Cleanup(callback.Close)
 +			template := `function(ctx) { credentials_present: std.objectHas(ctx.identity,'credentials'), previous_credentials_present: std.objectHas(ctx.session.identity,'credentials') }`
 +			if !stock {
-+				actual, err := os.ReadFile(os.Getenv("GEUL_CREDENTIAL_SETTINGS_TEMPLATE"))
++				actual, err := os.ReadFile(os.Getenv("GEUL_TEST_SETTINGS_TEMPLATE_PATH"))
 +				require.NoError(t, err, "test must use the identity repository's actual settings template")
 +				template = string(actual)
 +			}
